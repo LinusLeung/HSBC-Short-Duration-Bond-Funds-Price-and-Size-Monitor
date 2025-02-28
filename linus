@@ -1,0 +1,573 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HSBC Fund Monitor</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/flowbite/1.8.1/flowbite.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        :root {
+            --primary-color: #5D5CDE;
+            --text-color-light: #333333;
+            --text-color-dark: #F3F4F6;
+            --background-light: #FFFFFF;
+            --background-dark: #181818;
+            --card-bg-light: #F9FAFB;
+            --card-bg-dark: #2D2D2D;
+            --border-light: #E5E7EB;
+            --border-dark: #4B5563;
+        }
+        
+        @media (prefers-color-scheme: dark) {
+            body {
+                background-color: var(--background-dark);
+                color: var(--text-color-dark);
+            }
+            .card {
+                background-color: var(--card-bg-dark);
+                border-color: var(--border-dark);
+            }
+            .data-table {
+                border-color: var(--border-dark);
+            }
+            .data-table th, .data-table td {
+                border-color: var(--border-dark);
+            }
+        }
+        
+        @media (prefers-color-scheme: light) {
+            body {
+                background-color: var(--background-light);
+                color: var(--text-color-light);
+            }
+            .card {
+                background-color: var(--card-bg-light);
+                border-color: var(--border-light);
+            }
+            .data-table {
+                border-color: var(--border-light);
+            }
+            .data-table th, .data-table td {
+                border-color: var(--border-light);
+            }
+        }
+        
+        .card {
+            border-radius: 0.5rem;
+            border-width: 1px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
+        }
+        
+        .data-table {
+            width: 100%;
+            border-collapse: collapse;
+            border-width: 1px;
+            margin-top: 1rem;
+        }
+        
+        .data-table th, .data-table td {
+            padding: 0.75rem;
+            text-align: left;
+            border-width: 1px;
+        }
+        
+        .chart-container {
+            position: relative;
+            height: 300px;
+            width: 100%;
+            margin-top: 1rem;
+        }
+        
+        .loading {
+            border: 4px solid rgba(0, 0, 0, 0.1);
+            border-left-color: var(--primary-color);
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .btn-primary {
+            background-color: var(--primary-color);
+            color: white;
+            padding: 0.5rem 1rem;
+            border-radius: 0.375rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        
+        .btn-primary:hover {
+            background-color: #4B4AC6;
+        }
+        
+        .btn-primary:disabled {
+            background-color: #9998E8;
+            cursor: not-allowed;
+        }
+        
+        #refreshInterval {
+            font-size: 16px;
+            min-height: 42px;
+        }
+        
+        /* Custom tooltip styles */
+        .tooltip {
+            position: relative;
+            display: inline-block;
+        }
+        
+        .tooltip .tooltip-text {
+            visibility: hidden;
+            width: 200px;
+            background-color: #555;
+            color: #fff;
+            text-align: center;
+            border-radius: 6px;
+            padding: 5px;
+            position: absolute;
+            z-index: 1;
+            bottom: 125%;
+            left: 50%;
+            margin-left: -100px;
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+        
+        .tooltip:hover .tooltip-text {
+            visibility: visible;
+            opacity: 1;
+        }
+    </style>
+</head>
+<body class="p-4 md:p-6">
+    <header class="mb-6">
+        <h1 class="text-2xl md:text-3xl font-bold mb-2">HSBC Fund Monitor</h1>
+        <p class="text-sm md:text-base">Track the performance of HSBC Short Duration Fund</p>
+    </header>
+    
+    <main>
+        <div class="card" id="configCard">
+            <h2 class="text-xl font-semibold mb-4">Fund Configuration</h2>
+            <div class="grid gap-4 md:grid-cols-2">
+                <div>
+                    <label for="fundName" class="block mb-2 text-sm font-medium">Fund Name</label>
+                    <input type="text" id="fundName" value="HSBC Short Duration Fund" class="text-base w-full p-2.5 rounded-lg border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white" placeholder="Fund Name">
+                </div>
+                <div>
+                    <label for="refreshInterval" class="block mb-2 text-sm font-medium">Auto-Refresh Interval</label>
+                    <select id="refreshInterval" class="text-base w-full p-2.5 rounded-lg border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white">
+                        <option value="0">Manual refresh only</option>
+                        <option value="3600000">Every hour</option>
+                        <option value="21600000">Every 6 hours</option>
+                        <option value="86400000">Daily</option>
+                    </select>
+                </div>
+            </div>
+            <div class="mt-4">
+                <button id="fetchDataBtn" class="btn-primary">Fetch Fund Data</button>
+                <span id="lastUpdated" class="ml-4 text-sm"></span>
+            </div>
+        </div>
+        
+        <div class="card" id="currentDataCard">
+            <h2 class="text-xl font-semibold mb-4">Current Fund Data</h2>
+            <div id="loading" class="loading hidden"></div>
+            <div id="currentData" class="hidden">
+                <div class="grid gap-4 md:grid-cols-2 mb-4">
+                    <div class="p-4 bg-blue-100 dark:bg-blue-900 rounded-lg">
+                        <h3 class="text-sm uppercase font-medium text-blue-700 dark:text-blue-300">Fund Price</h3>
+                        <p id="currentPrice" class="text-2xl font-bold mt-2">--</p>
+                        <div id="priceChange" class="flex items-center mt-1 text-sm"></div>
+                    </div>
+                    <div class="p-4 bg-purple-100 dark:bg-purple-900 rounded-lg">
+                        <h3 class="text-sm uppercase font-medium text-purple-700 dark:text-purple-300">Fund Size</h3>
+                        <p id="currentSize" class="text-2xl font-bold mt-2">--</p>
+                        <div id="sizeChange" class="flex items-center mt-1 text-sm"></div>
+                    </div>
+                </div>
+                <div class="tooltip">
+                    <span class="text-sm text-gray-600 dark:text-gray-400 italic mr-2">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 inline" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        Information Source
+                    </span>
+                    <span class="tooltip-text">Data fetched using Claude AI search capability. This data is for reference only.</span>
+                </div>
+                <p id="dataSource" class="text-sm text-gray-600 dark:text-gray-400"></p>
+            </div>
+            <div id="errorMessage" class="hidden text-red-500 mt-4"></div>
+        </div>
+        
+        <div class="md:grid md:grid-cols-2 gap-6">
+            <div class="card">
+                <h2 class="text-xl font-semibold mb-4">Fund Price History</h2>
+                <div class="chart-container">
+                    <canvas id="priceChart"></canvas>
+                </div>
+            </div>
+            
+            <div class="card">
+                <h2 class="text-xl font-semibold mb-4">Fund Size History</h2>
+                <div class="chart-container">
+                    <canvas id="sizeChart"></canvas>
+                </div>
+            </div>
+        </div>
+        
+        <div class="card mt-6">
+            <h2 class="text-xl font-semibold mb-4">Historical Data</h2>
+            <div class="overflow-x-auto">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th>Fund Price</th>
+                            <th>Fund Size</th>
+                        </tr>
+                    </thead>
+                    <tbody id="historyTableBody">
+                        <tr>
+                            <td colspan="3" class="text-center py-4">No data available yet</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </main>
+    
+    <script>
+        // Store historical data
+        let fundHistory = [];
+        let priceChart = null;
+        let sizeChart = null;
+        let refreshIntervalId = null;
+        
+        // DOM elements
+        const fetchDataBtn = document.getElementById('fetchDataBtn');
+        const fundNameInput = document.getElementById('fundName');
+        const refreshIntervalSelect = document.getElementById('refreshInterval');
+        const loadingElement = document.getElementById('loading');
+        const currentDataElement = document.getElementById('currentData');
+        const errorMessageElement = document.getElementById('errorMessage');
+        const lastUpdatedElement = document.getElementById('lastUpdated');
+        const historyTableBody = document.getElementById('historyTableBody');
+        const currentPriceElement = document.getElementById('currentPrice');
+        const currentSizeElement = document.getElementById('currentSize');
+        const priceChangeElement = document.getElementById('priceChange');
+        const sizeChangeElement = document.getElementById('sizeChange');
+        const dataSourceElement = document.getElementById('dataSource');
+        
+        // Initialize charts
+        function initCharts() {
+            const priceChartCtx = document.getElementById('priceChart').getContext('2d');
+            const sizeChartCtx = document.getElementById('sizeChart').getContext('2d');
+            
+            const chartConfig = (label, color) => ({
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [{
+                        label: label,
+                        data: [],
+                        fill: false,
+                        borderColor: color,
+                        tension: 0.1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        x: {
+                            ticks: {
+                                maxTicksLimit: 8
+                            }
+                        }
+                    }
+                }
+            });
+            
+            priceChart = new Chart(priceChartCtx, chartConfig('Fund Price', '#5D5CDE'));
+            sizeChart = new Chart(sizeChartCtx, chartConfig('Fund Size (in millions)', '#9061F9'));
+        }
+        
+        // Format currency
+        function formatCurrency(value, currency = 'USD') {
+            return new Intl.NumberFormat('en-US', {
+                style: 'currency',
+                currency: currency
+            }).format(value);
+        }
+        
+        // Format size (in millions/billions)
+        function formatSize(value) {
+            if (value >= 1000) {
+                return (value / 1000).toFixed(2) + ' billion';
+            } else {
+                return value.toFixed(2) + ' million';
+            }
+        }
+        
+        // Format date
+        function formatDate(date) {
+            return new Intl.DateTimeFormat('en-US', {
+                year: 'numeric',
+                month: 'short',
+                day: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit'
+            }).format(new Date(date));
+        }
+        
+        // Show loading state
+        function showLoading() {
+            fetchDataBtn.disabled = true;
+            loadingElement.classList.remove('hidden');
+            currentDataElement.classList.add('hidden');
+            errorMessageElement.classList.add('hidden');
+        }
+        
+        // Show error message
+        function showError(message) {
+            loadingElement.classList.add('hidden');
+            currentDataElement.classList.add('hidden');
+            errorMessageElement.classList.remove('hidden');
+            errorMessageElement.textContent = message;
+            fetchDataBtn.disabled = false;
+        }
+        
+        // Calculate change and generate HTML for display
+        function calculateChangeHtml(current, previous) {
+            if (!previous) return '';
+            
+            const difference = current - previous;
+            const percentChange = (difference / previous) * 100;
+            
+            let changeHtml = '';
+            if (difference > 0) {
+                changeHtml = `<span class="text-green-600 dark:text-green-400">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 inline" viewBox="0 0 20 20" fill="currentColor">
+                        <path fill-rule="evenodd" d="M12 7a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0V8.414l-4.293 4.293a1 1 0 01-1.414 0L8 10.414l-4.293 4.293a1 1 0 01-1.414-1.414l5-5a1 1 0 011.414 0L11 10.586 14.586 7H12z" clip-rule="evenodd" />
+                    </svg>
+                    +${Math.abs(difference).toFixed(2)} (+${Math.abs(percentChange).toFixed(2)}%)
+                </span>`;
+            } else if (difference < 0) {
+                changeHtml = `<span class="text-red-600 dark:text-red-400">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 inline" viewBox="0 0 20 20" fill="currentColor">
+                        <path fill-rule="evenodd" d="M12 13a1 1 0 110 2H7a1 1 0 01-1-1v-5a1 1 0 112 0v2.586l4.293-4.293a1 1 0 011.414 0L16 9.586V7a1 1 0 012 0v5a1 1 0 01-1 1h-5z" clip-rule="evenodd" />
+                    </svg>
+                    ${difference.toFixed(2)} (${percentChange.toFixed(2)}%)
+                </span>`;
+            } else {
+                changeHtml = `<span class="text-gray-600 dark:text-gray-400">No change</span>`;
+            }
+            
+            return changeHtml;
+        }
+        
+        // Update the UI with new fund data
+        function updateUI(data) {
+            // Update current data card
+            currentPriceElement.textContent = formatCurrency(data.price);
+            currentSizeElement.textContent = formatSize(data.size);
+            dataSourceElement.textContent = data.source || "Source: Claude AI search";
+            
+            // Calculate changes
+            const previousData = fundHistory.length > 0 ? fundHistory[fundHistory.length - 1] : null;
+            
+            if (previousData) {
+                priceChangeElement.innerHTML = calculateChangeHtml(data.price, previousData.price);
+                sizeChangeElement.innerHTML = calculateChangeHtml(data.size, previousData.size);
+            }
+            
+            // Add new data point to history
+            fundHistory.push(data);
+            
+            // Save to localStorage
+            localStorage.setItem('fundHistory', JSON.stringify(fundHistory));
+            
+            // Update last updated time
+            lastUpdatedElement.textContent = `Last updated: ${formatDate(data.timestamp)}`;
+            
+            // Update charts
+            updateCharts();
+            
+            // Update history table
+            updateHistoryTable();
+            
+            // Show current data
+            loadingElement.classList.add('hidden');
+            currentDataElement.classList.remove('hidden');
+            fetchDataBtn.disabled = false;
+        }
+        
+        // Update the charts with historical data
+        function updateCharts() {
+            const labels = fundHistory.map(item => {
+                const date = new Date(item.timestamp);
+                return date.toLocaleDateString();
+            });
+            
+            const priceData = fundHistory.map(item => item.price);
+            const sizeData = fundHistory.map(item => item.size);
+            
+            // Update price chart
+            priceChart.data.labels = labels;
+            priceChart.data.datasets[0].data = priceData;
+            priceChart.update();
+            
+            // Update size chart
+            sizeChart.data.labels = labels;
+            sizeChart.data.datasets[0].data = sizeData;
+            sizeChart.update();
+        }
+        
+        // Update the history table
+        function updateHistoryTable() {
+            if (fundHistory.length === 0) {
+                historyTableBody.innerHTML = `<tr><td colspan="3" class="text-center py-4">No data available yet</td></tr>`;
+                return;
+            }
+            
+            // Sort history from newest to oldest
+            const sortedHistory = [...fundHistory].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+            
+            // Build table rows
+            let tableHtml = '';
+            sortedHistory.forEach(item => {
+                tableHtml += `
+                <tr>
+                    <td>${formatDate(item.timestamp)}</td>
+                    <td>${formatCurrency(item.price)}</td>
+                    <td>${formatSize(item.size)}</td>
+                </tr>
+                `;
+            });
+            
+            historyTableBody.innerHTML = tableHtml;
+        }
+        
+        // Fetch fund data from Claude
+        async function fetchFundData() {
+            const fundName = fundNameInput.value.trim();
+            
+            if (!fundName) {
+                alert('Please enter a fund name');
+                return;
+            }
+            
+            showLoading();
+            
+            try {
+                // Define the prompt for Claude
+                const prompt = `@Claude-3.7-Sonnet Please search for and provide the latest fund price and fund size of ${fundName}. Format your response as JSON ONLY with the following structure: {"price": number, "size": number (in millions), "currency": string, "source": string, "date": string}. No other text or explanation.`;
+                
+                // Register a handler for Claude's response
+                window.Poe.registerHandler("fund-data-handler", (result, context) => {
+                    if (result.status === "error") {
+                        showError("Error fetching fund data: " + (result.responses[0]?.statusText || "Unknown error"));
+                        return;
+                    }
+                    
+                    if (result.status === "complete") {
+                        try {
+                            const responseText = result.responses[0].content;
+                            // Extract JSON from the response (handle case where Claude might wrap in code block)
+                            let jsonText = responseText;
+                            if (responseText.includes('```json')) {
+                                jsonText = responseText.split('```json')[1].split('```')[0].trim();
+                            } else if (responseText.includes('```')) {
+                                jsonText = responseText.split('```')[1].split('```')[0].trim();
+                            }
+                            
+                            const fundData = JSON.parse(jsonText);
+                            
+                            // Add timestamp
+                            fundData.timestamp = new Date().toISOString();
+                            
+                            // Update UI with the new data
+                            updateUI(fundData);
+                        } catch (error) {
+                            console.error("Error parsing response:", error);
+                            showError("Could not parse the fund data. Claude may not have provided a valid JSON response.");
+                        }
+                    }
+                });
+                
+                // Send the message to Claude
+                await window.Poe.sendUserMessage(prompt, {
+                    handler: "fund-data-handler",
+                    stream: false,
+                    openChat: false
+                });
+                
+            } catch (error) {
+                showError("Error: " + error.message);
+                console.error("Error:", error);
+            }
+        }
+        
+        // Set up auto-refresh
+        function setupAutoRefresh() {
+            // Clear any existing interval
+            if (refreshIntervalId) {
+                clearInterval(refreshIntervalId);
+                refreshIntervalId = null;
+            }
+            
+            const intervalMs = parseInt(refreshIntervalSelect.value);
+            if (intervalMs > 0) {
+                refreshIntervalId = setInterval(fetchFundData, intervalMs);
+            }
+        }
+        
+        // Initialize the application
+        function initApp() {
+            // Initialize charts
+            initCharts();
+            
+            // Load saved history from localStorage
+            const savedHistory = localStorage.getItem('fundHistory');
+            if (savedHistory) {
+                try {
+                    fundHistory = JSON.parse(savedHistory);
+                    
+                    // If we have history, update the UI with the most recent data
+                    if (fundHistory.length > 0) {
+                        const latestData = fundHistory[fundHistory.length - 1];
+                        updateUI(latestData);
+                    }
+                } catch (e) {
+                    console.error('Error loading saved history:', e);
+                    // Reset history if there's an error
+                    fundHistory = [];
+                }
+            }
+            
+            // Set up event listeners
+            fetchDataBtn.addEventListener('click', fetchFundData);
+            refreshIntervalSelect.addEventListener('change', setupAutoRefresh);
+            
+            // Set up auto-refresh based on initial setting
+            setupAutoRefresh();
+        }
+        
+        // Initialize when the page loads
+        window.addEventListener('DOMContentLoaded', initApp);
+    </script>
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/flowbite/1.8.1/flowbite.min.js"></script>
+</body>
+</html>
